@@ -32,7 +32,7 @@ plugins {
 android {
     compileSdkVersion(28)
     defaultConfig {
-        minSdkVersion(17)
+        minSdkVersion(18)
         targetSdkVersion(28)
         applicationId = "com.github.urho3d.launcher"
         versionCode = 1
@@ -47,6 +47,7 @@ android {
                             "URHO3D_LIB_TYPE",
                             // TODO: "URHO3D_PACKAGING",
                             "URHO3D_ANGELSCRIPT",
+                            "URHO3D_GLES3",
                             "URHO3D_LUA")
                             .filter { project.hasProperty(it) }
                             .map { "-D$it=${project.property(it)}" }

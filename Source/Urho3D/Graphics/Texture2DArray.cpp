@@ -47,7 +47,7 @@ Texture2DArray::Texture2DArray(Context* context) :
     Texture(context)
 {
 #ifdef URHO3D_OPENGL
-#ifndef GL_ES_VERSION_2_0
+#ifndef URHO3D_GLES2
     target_ = GL_TEXTURE_2D_ARRAY;
 #endif
 #endif

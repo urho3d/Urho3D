@@ -314,7 +314,7 @@ static void RegisterRenderPath(asIScriptEngine* engine)
     engine->RegisterEnumValue("TextureUnit", "TU_LIGHTRAMP", TU_LIGHTRAMP);
     engine->RegisterEnumValue("TextureUnit", "TU_LIGHTSHAPE", TU_LIGHTSHAPE);
     engine->RegisterEnumValue("TextureUnit", "TU_SHADOWMAP", TU_SHADOWMAP);
-#ifdef DESKTOP_GRAPHICS
+#ifdef DESKTOP_GRAPHICS_OR_GLES3
     engine->RegisterEnumValue("TextureUnit", "TU_CUSTOM1", TU_CUSTOM1);
     engine->RegisterEnumValue("TextureUnit", "TU_CUSTOM2", TU_CUSTOM2);
     engine->RegisterEnumValue("TextureUnit", "TU_VOLUMEMAP", TU_VOLUMEMAP);
@@ -473,9 +473,7 @@ static void RegisterTextures(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Viewport", "IntVector2 WorldToScreenPoint(const Vector3&in) const", asMETHOD(Viewport, WorldToScreenPoint), asCALL_THISCALL);
     engine->RegisterObjectMethod("Viewport", "Vector3 ScreenToWorldPoint(int, int, float) const", asMETHOD(Viewport, ScreenToWorldPoint), asCALL_THISCALL);
 
-    engine->RegisterObjectType("RenderSurface", 0, asOBJ_REF);
-    engine->RegisterObjectBehaviour("RenderSurface", asBEHAVE_ADDREF, "void f()", asMETHOD(RenderSurface, AddRef), asCALL_THISCALL);
-    engine->RegisterObjectBehaviour("RenderSurface", asBEHAVE_RELEASE, "void f()", asMETHOD(RenderSurface, ReleaseRef), asCALL_THISCALL);
+    RegisterRefCounted<RenderSurface>(engine, "RenderSurface");
     engine->RegisterObjectMethod("RenderSurface", "void QueueUpdate()", asMETHOD(RenderSurface, QueueUpdate), asCALL_THISCALL);
     engine->RegisterObjectMethod("RenderSurface", "Texture@+ get_parentTexture() const", asMETHOD(RenderSurface, GetParentTexture), asCALL_THISCALL);
     engine->RegisterObjectMethod("RenderSurface", "int get_width() const", asMETHOD(RenderSurface, GetWidth), asCALL_THISCALL);
@@ -1945,6 +1943,10 @@ static void RegisterGraphics(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Graphics", "int get_currentMonitor() const", asMETHOD(Graphics, GetCurrentMonitor), asCALL_THISCALL);
     engine->RegisterObjectMethod("Graphics", "bool get_maximized() const", asMETHOD(Graphics, GetMaximized), asCALL_THISCALL);
     engine->RegisterObjectMethod("Graphics", "Vector3 get_displayDPI(int) const", asMETHOD(Graphics, GetDisplayDPI), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Graphics", "const String& get_strRenderer() const", asMETHOD(Graphics, GetRendererName), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Graphics", "const String& get_strVersion() const", asMETHOD(Graphics, GetVersionString), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Graphics", "bool get_highDPI() const", asMETHOD(Graphics, GetHighDPI), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Graphics", "int get_refreshRate() const", asMETHOD(Graphics, GetRefreshRate), asCALL_THISCALL);
     engine->RegisterGlobalFunction("Graphics@+ get_graphics()", asFUNCTION(GetGraphics), asCALL_CDECL);
 }
 

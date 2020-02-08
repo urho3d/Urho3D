@@ -174,6 +174,11 @@ void DebugHud::Update()
             renderer->GetMaxOccluderTriangles() > 0 ? "On" : "Off",
             renderer->GetDynamicInstancing() ? "On" : "Off",
             graphics->GetApiName().CString());
+    #ifdef URHO3D_OPENGL
+        mode.AppendWithFormat(" Renderer:%s Version:%s", graphics->GetRendererName().CString(),
+            graphics->GetVersionString().CString());
+    #endif
+
 
         modeText_->SetText(mode);
     }

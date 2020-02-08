@@ -29,7 +29,7 @@ uniform mat4 cViewProj;
 uniform vec4 cUOffset;
 uniform vec4 cVOffset;
 uniform mat4 cZone;
-#if !defined(GL_ES) || defined(WEBGL)
+#if !defined(GL_ES) || defined(WEBGL) || __VERSION__>=300
     uniform mat4 cLightMatrices[4];
 #else
     uniform highp mat4 cLightMatrices[2];
@@ -48,7 +48,7 @@ uniform mat4 cZone;
 #ifdef COMPILEPS
 
 // Fragment shader uniforms
-#ifdef GL_ES
+#ifdef MOBILE_GRAPHICS
     precision mediump float;
 #endif
 
@@ -156,6 +156,10 @@ uniform ObjectVS
 #endif
 
 #ifdef COMPILEPS
+
+#ifdef MOBILE_GRAPHICS
+    precision mediump float;
+#endif
 
 // Pixel shader uniforms
 uniform FramePS

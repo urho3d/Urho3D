@@ -240,6 +240,8 @@ env:
   matrix:
     - ORG_GRADLE_PROJECT_URHO3D_LIB_TYPE=STATIC
     - ORG_GRADLE_PROJECT_URHO3D_LIB_TYPE=SHARED
+    - ORG_GRADLE_PROJECT_URHO3D_LIB_TYPE=STATIC ORG_GRADLE_PROJECT_URHO3D_GLES3=1
+    - ORG_GRADLE_PROJECT_URHO3D_LIB_TYPE=SHARED ORG_GRADLE_PROJECT_URHO3D_GLES3=1
 stage: universal build configuration
 before_script:
   - rake ci_timer
@@ -306,6 +308,9 @@ env:
     # ODROID-X2
     - URHO3D_64BIT=0 URHO3D_LIB_TYPE=STATIC ARM_ABI_FLAGS='-mcpu=cortex-a9 -mfpu=neon-fp16'
     - URHO3D_64BIT=0 URHO3D_LIB_TYPE=SHARED ARM_ABI_FLAGS='-mcpu=cortex-a9 -mfpu=neon-fp16'
+    # GLES3
+    - URHO3D_64BIT=0 URHO3D_LIB_TYPE=STATIC URHO3D_GLES3=1 ARM_ABI_FLAGS='-mcpu=cortex-a9 -mfpu=neon-fp16'
+    - URHO3D_64BIT=0 URHO3D_LIB_TYPE=SHARED URHO3D_GLES3=1 ARM_ABI_FLAGS='-mcpu=cortex-a9 -mfpu=neon-fp16'
 stage: release build configuration
 before_script:
   - rake ci_timer

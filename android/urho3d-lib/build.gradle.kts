@@ -35,7 +35,7 @@ plugins {
 android {
     compileSdkVersion(28)
     defaultConfig {
-        minSdkVersion(17)
+        minSdkVersion(18)
         targetSdkVersion(28)
         versionCode = 1
         versionName = project.version.toString()
@@ -52,6 +52,7 @@ android {
                             "URHO3D_LUA",
                             "URHO3D_LUAJIT",
                             "URHO3D_LUAJIT_AMALG",
+                            "URHO3D_GLES3",
                             "URHO3D_IK",
                             "URHO3D_NETWORK",
                             "URHO3D_PHYSICS",

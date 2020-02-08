@@ -4,7 +4,7 @@
     <rendertarget name="depth" sizedivisor="1 1" format="readabledepth" persistent="true" />
     <command type="clear" color="fog" depth="1.0" stencil="0" depthstencil="depth" />
     <command type="clear" color="0 0 0 0" output="albedo" depthstencil="depth" />
-    <command type="scenepass" pass="deferred" marktostencil="true" vertexlights="true" metadata="gbuffer" depthstencil="depth">
+    <command type="scenepass" pass="deferred" marktostencil="true" vertexlights="true" metadata="gbuffer" depthstencil="depth" psdefines="HWDEPTH">
         <output index="0" name="viewport" />
         <output index="1" name="albedo" />
         <output index="2" name="normal" />

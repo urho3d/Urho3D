@@ -30,11 +30,23 @@
 #include "../../Math/Color.h"
 
 #if defined(IOS) || defined(TVOS)
+#if URHO3D_GLES3
+#include <OpenGLES/ES3/gl.h>
+#include <OpenGLES/ES3/glext.h>
+#else
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
+#define URHO3D_GLES2
+#endif
 #elif defined(__ANDROID__) || defined (__arm__) || defined(__aarch64__) || defined (__EMSCRIPTEN__)
+#if URHO3D_GLES3
+#include <GLES3/gl3.h>
+#include <GLES3/gl3ext.h>
+#else
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#define URHO3D_GLES2
+#endif
 #else
 #include <GLEW/glew.h>
 #endif
@@ -56,6 +68,12 @@
 #endif
 #ifndef GL_ETC2_RGBA8_OES
 #define GL_ETC2_RGBA8_OES 0x9278
+#endif
+#ifndef GL_DEPTH_COMPONENT24_OES
+#define GL_DEPTH_COMPONENT24_OES 0x81A6
+#endif
+#ifndef GL_DEPTH24_STENCIL8_OES
+#define GL_DEPTH24_STENCIL8_OES 0x88F0
 #endif
 #ifndef COMPRESSED_RGB_PVRTC_4BPPV1_IMG
 #define COMPRESSED_RGB_PVRTC_4BPPV1_IMG 0x8c00

@@ -110,7 +110,7 @@ void PS()
 #else
     #ifdef ALPHAMAP
         gl_FragColor.rgb = vColor.rgb;
-        #ifdef GL3
+        #if defined(GL3) && !defined(GL_ES)
             gl_FragColor.a = vColor.a * texture2D(sDiffMap, vTexCoord).r;
         #else
             gl_FragColor.a = vColor.a * texture2D(sDiffMap, vTexCoord).a;

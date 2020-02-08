@@ -417,7 +417,7 @@ bool Texture2DArray::Create()
 {
     Release();
 
-#ifdef GL_ES_VERSION_2_0
+#if defined(GL_ES_VERSION_2_0) && !defined(GL_ES_VERSION_3_0)
     URHO3D_LOGERROR("Failed to create 2D array texture, currently unsupported on OpenGL ES 2");
     return false;
 #else

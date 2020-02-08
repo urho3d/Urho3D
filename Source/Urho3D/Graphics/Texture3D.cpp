@@ -43,7 +43,7 @@ Texture3D::Texture3D(Context* context) :
     Texture(context)
 {
 #ifdef URHO3D_OPENGL
-#ifndef GL_ES_VERSION_2_0
+#ifndef URHO3D_GLES2
     target_ = GL_TEXTURE_3D;
 #endif
 #endif
