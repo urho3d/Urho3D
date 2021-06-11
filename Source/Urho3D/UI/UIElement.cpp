@@ -28,6 +28,7 @@
 #include "../Container/Sort.h"
 #include "../IO/Log.h"
 #include "../Resource/ResourceCache.h"
+#include "../Resource/JSONFile.h"
 #include "../Scene/ObjectAnimation.h"
 #include "../UI/Cursor.h"
 #include "../UI/UI.h"
@@ -166,6 +167,95 @@ void UIElement::ApplyAttributes()
         if (colors_[i] != colors_[0])
             colorGradient_ = true;
     }
+}
+
+bool UIElement::Load(Deserializer& source)
+{
+    // Just used for loading children
+    source.ReadString(); // Clear type string
+    source.ReadBool(); // Clear internal bool
+
+    appliedStyle_ =  source.ReadString(); // Can't filter attributes on save, so it effectively becomes this
+
+    if (!Animatable::Load(source))
+        return false;
+
+    unsigned numChildren = source.ReadVLE();
+    unsigned nextInternalChild = 0;
+    for (unsigned i = 0; i < numChildren; ++i)
+    {
+        unsigned startPos = source.Tell();
+        String typeName = source.ReadString();
+        bool internalElem = source.ReadBool();
+        if (typeName.Empty())
+            typeName = "UIElement";
+        source.SeekRelative(startPos - source.Tell());
+
+        UIElement* child = nullptr;
+        if (!internalElem)
+            child = CreateChild(typeName, String::EMPTY, M_MAX_UNSIGNED);
+        else
+        {
+            for (unsigned i = nextInternalChild; i < children_.Size(); ++i)
+            {
+                if (children_[i]->IsInternal() && children_[i]->GetTypeName() == typeName)
+                {
+                    child = children_[i];
+                    nextInternalChild = i + 1;
+                    break;
+                }
+            }
+
+            if (!child)
+                URHO3D_LOGWARNING("Could not find matching internal child element of type " + typeName + " in " + GetTypeName());
+        }
+
+        if (child)
+        {
+            if (!child->Load(source))
+                return false;
+        }
+    }
+
+    ApplyAttributes();
+
+    EnableLayoutUpdate();
+    UpdateLayout();
+
+    return true;
+}
+
+bool UIElement::Save(Serializer& dest) const
+{
+    // Write type
+    if (!dest.WriteString(GetTypeName()))
+        return false;
+
+    // Write internal flag
+    if (!dest.WriteBool(internal_))
+        return false;
+
+    // Write style
+    if (!dest.WriteString(appliedStyle_))
+        return false;
+
+    // Write attributes
+    if (!Animatable::Save(dest))
+        return false;
+
+    // Write child elements
+    dest.WriteVLE(children_.Size());
+    for (unsigned i = 0; i < children_.Size(); ++i)
+    {
+        UIElement* element = children_[i];
+        if (element->IsTemporary())
+            continue;
+
+        if (!element->Save(dest))
+            return false;
+    }
+
+    return true;
 }
 
 bool UIElement::LoadXML(const XMLElement& source)
@@ -336,6 +426,165 @@ bool UIElement::SaveXML(XMLElement& dest) const
     return FilterAttributes(dest);
 }
 
+bool UIElement::LoadJSON(const JSONValue& source)
+{
+    return LoadJSON(source, nullptr);
+}
+
+bool UIElement::LoadJSON(const JSONValue& source, XMLFile* styleFile)
+{
+    // Get style override if defined
+    String styleName = source["style"].GetString();
+
+    // Apply the style first, if the style file is available
+    if (styleFile)
+    {
+        // If not defined, use type name
+        if (styleName.Empty())
+            styleName = GetTypeName();
+
+        SetStyle(styleName, styleFile);
+    }
+    // The 'style' attribute value in the style file cannot be equals to original's applied style to prevent infinite loop
+    else if (!styleName.Empty() && styleName != appliedStyle_)
+    {
+        // Attempt to use the default style file
+        styleFile = GetDefaultStyle();
+
+        if (styleFile)
+        {
+            // Remember the original applied style
+            String appliedStyle(appliedStyle_);
+            SetStyle(styleName, styleFile);
+            appliedStyle_ = appliedStyle;
+        }
+    }
+
+    // Prevent updates while loading attributes
+    DisableLayoutUpdate();
+
+    // Then load rest of the attributes from the source
+    if (!Animatable::LoadJSON(source))
+        return false;
+
+    unsigned nextInternalChild = 0;
+
+    // Load child elements. Internal elements are not to be created as they already exist
+    const JSONArray& children = source["children"].GetArray();
+    for (auto childElem : children)
+    {
+        bool internalElem = childElem["internal"].GetBool();
+        String typeName = childElem["type"].GetString();
+        if (typeName.Empty())
+            typeName = "UIElement";
+        unsigned index = childElem["index"].GetUInt(M_MAX_UNSIGNED);
+        UIElement* child = nullptr;
+
+        if (!internalElem)
+            child = CreateChild(typeName, String::EMPTY, index);
+        else
+        {
+            for (unsigned i = nextInternalChild; i < children_.Size(); ++i)
+            {
+                if (children_[i]->IsInternal() && children_[i]->GetTypeName() == typeName)
+                {
+                    child = children_[i];
+                    nextInternalChild = i + 1;
+                    break;
+                }
+            }
+
+            if (!child)
+                URHO3D_LOGWARNING("Could not find matching internal child element of type " + typeName + " in " + GetTypeName());
+        }
+
+        if (child)
+        {
+            if (!styleFile)
+                styleFile = GetDefaultStyle();
+            if (!child->LoadJSON(childElem, styleFile))
+                return false;
+        }
+    }
+
+    ApplyAttributes();
+
+    EnableLayoutUpdate();
+    UpdateLayout();
+
+    return true;
+}
+
+UIElement* UIElement::LoadChildJSON(const JSONValue& childElem, XMLFile* styleFile)
+{
+    bool internalElem = childElem["internal"].GetBool();
+    if (internalElem)
+    {
+        URHO3D_LOGERROR("Loading internal child element is not supported");
+        return nullptr;
+    }
+
+    String typeName = childElem["type"].GetString();
+    if (typeName.Empty())
+        typeName = "UIElement";
+    unsigned index = childElem["index"].GetUInt(M_MAX_UNSIGNED);
+    UIElement* child = CreateChild(typeName, String::EMPTY, index);
+
+    if (child)
+    {
+        if (!styleFile)
+            styleFile = GetDefaultStyle();
+        if (!child->LoadJSON(childElem, styleFile))
+        {
+            RemoveChild(child, index);
+            return nullptr;
+        }
+    }
+
+    return child;
+}
+
+bool UIElement::SaveJSON(JSONValue& dest) const
+{
+    // Write type
+    if (GetTypeName() != "UIElement")
+        dest.Set("type", GetTypeName());
+
+    // Write internal flag
+    if (internal_)
+        dest.Set("internal", internal_);
+
+    // Write style
+    if (!appliedStyle_.Empty() && appliedStyle_ != "UIElement")
+        dest.Set("style", appliedStyle_);
+    else if (internal_)
+        dest.Set("style", "none");
+
+    // Write attributes
+    if (!Animatable::SaveJSON(dest))
+        return false;
+
+    // Write child elements
+    JSONArray children;
+    for (unsigned i = 0; i < children_.Size(); ++i)
+    {
+        UIElement* element = children_[i];
+        if (element->IsTemporary())
+            continue;
+
+        JSONValue childElem;
+        if (!element->SaveJSON(childElem))
+            return false;
+
+        children.Push(childElem);
+    }
+    if (!children.Empty())
+        dest.Set("children", children);
+
+    // Filter UI-style and implicit attributes
+    return FilterAttributes(dest);
+}
+
 void UIElement::Update(float timeStep)
 {
 }
@@ -482,6 +731,19 @@ bool UIElement::SaveXML(Serializer& dest, const String& indentation) const
     return SaveXML(rootElem) && xml->Save(dest, indentation);
 }
 
+bool UIElement::LoadJSON(Deserializer& source)
+{
+    SharedPtr<JSONFile> json(new JSONFile(context_));
+    return json->Load(source) && LoadJSON(json->GetRoot());
+}
+
+bool UIElement::SaveJSON(Serializer& dest, const String& indentation) const
+{
+    SharedPtr<JSONFile> json(new JSONFile(context_));
+    JSONValue& rootElem = json->GetRoot();
+    return SaveJSON(rootElem) && json->Save(dest, indentation);
+}
+
 bool UIElement::FilterAttributes(XMLElement& dest) const
 {
     // Filter UI styling attributes
@@ -489,6 +751,34 @@ bool UIElement::FilterAttributes(XMLElement& dest) const
     if (styleFile)
     {
         String style = dest.GetAttribute("style");
+        if (!style.Empty() && style != "none")
+        {
+            if (styleXPathQuery_.SetVariable("typeName", style))
+            {
+                XMLElement styleElem = GetDefaultStyle()->GetRoot().SelectSinglePrepared(styleXPathQuery_);
+                if (styleElem && !FilterUIStyleAttributes(dest, styleElem))
+                    return false;
+            }
+        }
+    }
+
+    // Filter implicit attributes
+    if (!FilterImplicitAttributes(dest))
+    {
+        URHO3D_LOGERROR("Could not remove implicit attributes");
+        return false;
+    }
+
+    return true;
+}
+
+bool UIElement::FilterAttributes(JSONValue& dest) const
+{
+    // Filter UI styling attributes
+    XMLFile* styleFile = GetDefaultStyle();
+    if (styleFile)
+    {
+        String style = dest["style"].GetString();
         if (!style.Empty() && style != "none")
         {
             if (styleXPathQuery_.SetVariable("typeName", style))
@@ -2032,6 +2322,71 @@ bool UIElement::FilterImplicitAttributes(XMLElement& dest) const
             return false;
         if (!RemoveChildXML(dest, "Size"))
             return false;
+    }
+
+    return true;
+}
+
+bool UIElement::FilterUIStyleAttributes(JSONValue& dest, const XMLElement& styleElem) const
+{
+    // Remove style attribute only when its value is identical to the value stored in style file
+    String style = styleElem.GetAttribute("style");
+    if (!style.Empty())
+    {
+        if (style == dest["style"].GetString())
+        {
+            if (!dest.Erase("style"))
+            {
+                URHO3D_LOGWARNING("Could not remove style attribute");
+                return false;
+            }
+        }
+    }
+
+    // Perform the same action recursively for internal child elements stored in style file
+    JSONArray childDest = dest["children"].GetArray();
+    JSONArray::Iterator currentDest = childDest.Begin();
+    XMLElement childElem = styleElem.GetChild("element");
+    while (currentDest != childDest.End() && childElem)
+    {
+        if (!childElem.GetBool("internal"))
+        {
+            URHO3D_LOGERROR("Invalid style file, style element can only contain internal child elements");
+            return false;
+        }
+        if (!FilterUIStyleAttributes(*currentDest, childElem))
+            return false;
+
+        ++currentDest;
+        childElem = childElem.GetNext("element");
+    }
+    if (!childDest.Empty())
+        dest.Set("children", childDest);
+
+    // Remove style attribute when it is the same as its type, however, if it is an internal element then replace it to "none" instead
+    if (!dest["style"].GetString().Empty() && dest["style"].GetString() == dest["type"].GetString())
+    {
+        if (internal_)
+            dest.Set("style", "none");
+        else
+        {
+            if (!dest.Erase("style"))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+bool UIElement::FilterImplicitAttributes(JSONValue& dest) const
+{
+    // Remove positioning and sizing attributes when they are under the influence of layout mode
+    if (layoutMode_ != LM_FREE && !IsFixedWidth() && !IsFixedHeight())
+        dest.Erase("Min Size");
+    if (parent_ && parent_->layoutMode_ != LM_FREE)
+    {
+        dest.Erase("Position");
+        dest.Erase("Size");
     }
 
     return true;

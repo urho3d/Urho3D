@@ -73,6 +73,10 @@ public:
     /// @nobind
     static void RegisterObject(Context* context);
 
+    /// Load from binary data. Return true if successful.
+    bool Load(Deserializer& source) override;
+    /// Save as binary data. Return true if successful.
+    bool Save(Serializer& dest) const override;
     /// Load from XML data. Return true if successful.
     bool LoadXML(const XMLElement& source) override;
     /// Save as XML data. Return true if successful.

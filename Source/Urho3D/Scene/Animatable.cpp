@@ -74,6 +74,93 @@ void Animatable::RegisterObject(Context* context)
         ResourceRef(ObjectAnimation::GetTypeStatic()), AM_DEFAULT);
 }
 
+bool Animatable::Load(Deserializer& source)
+{
+    if (!Serializable::Load(source))
+        return false;
+
+    SetObjectAnimation(nullptr);
+    attributeAnimationInfos_.Clear();
+
+    if (source.ReadBool())
+    {
+        SharedPtr<ObjectAnimation> objectAnimation(new ObjectAnimation(context_));
+        if (!objectAnimation->Load(source))
+            return false;
+
+        SetObjectAnimation(objectAnimation);
+    }
+
+    unsigned numAnimations = source.ReadVLE();
+    for (unsigned i = 0; i < numAnimations; ++i)
+    {
+        if (!source.ReadBool())
+            continue;
+
+        String name = source.ReadString();
+        SharedPtr<ValueAnimation> attributeAnimation(new ValueAnimation(context_));
+        if (!attributeAnimation->Load(source))
+            return false;
+
+        String wrapModeString = wrapModeNames[source.ReadVLE()];
+        WrapMode wrapMode = WM_LOOP;
+        for (int i = 0; i <= WM_CLAMP; ++i)
+        {
+            if (wrapModeString == wrapModeNames[i])
+            {
+                wrapMode = (WrapMode)i;
+                break;
+            }
+        }
+
+        float speed = source.ReadFloat();
+        SetAttributeAnimation(name, attributeAnimation, wrapMode, speed);
+    }
+
+    return true;
+}
+
+bool Animatable::Save(Serializer& dest) const
+{
+    if (!Serializable::Save(dest))
+        return false;
+
+    // Object animation without name
+    if (objectAnimation_ && objectAnimation_->GetName().Empty())
+    {
+        dest.WriteBool(true);
+
+        if (!objectAnimation_->Save(dest))
+            return false;
+    }
+    else
+        dest.WriteBool(false);
+
+    dest.WriteVLE(attributeAnimationInfos_.Size());
+    for (HashMap<String, SharedPtr<AttributeAnimationInfo> >::ConstIterator i = attributeAnimationInfos_.Begin();
+         i != attributeAnimationInfos_.End(); ++i)
+    {
+        ValueAnimation* attributeAnimation = i->second_->GetAnimation();
+        if (attributeAnimation->GetOwner())
+        {
+            dest.WriteBool(false);
+            continue;
+        }
+        else
+            dest.WriteBool(true);
+
+        const AttributeInfo& attr = i->second_->GetAttributeInfo();
+        dest.WriteString(attr.name_);
+        if (!attributeAnimation->Save(dest))
+            return false;
+
+        dest.WriteVLE(i->second_->GetWrapMode());
+        dest.WriteFloat((float) i->second_->GetSpeed());
+    }
+    
+    return true;
+}
+
 bool Animatable::LoadXML(const XMLElement& source)
 {
     if (!Serializable::LoadXML(source))
