@@ -74,12 +74,12 @@ bool ValueAnimationInfo::Update(float timeStep)
 
 bool ValueAnimationInfo::SetTime(float time)
 {
-    if (!animation_ || !target_)
+    if (!animation_)
         return true;
 
     currentTime_ = time;
 
-    if (!animation_->IsValid())
+    if (!target_ || !animation_->IsValid())
         return true;
 
     bool finished = false;

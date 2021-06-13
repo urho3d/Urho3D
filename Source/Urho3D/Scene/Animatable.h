@@ -91,6 +91,7 @@ public:
     /// Set object animation.
     /// @property
     void SetObjectAnimation(ObjectAnimation* objectAnimation);
+    void SetObjectAnimationOnLoad(ObjectAnimation* objectAnimation);
     /// Set attribute animation.
     void SetAttributeAnimation
         (const String& name, ValueAnimation* attributeAnimation, WrapMode wrapMode = WM_LOOP, float speed = 1.0f);
@@ -125,6 +126,7 @@ public:
     void SetObjectAnimationAttr(const ResourceRef& value);
     /// Return object animation attribute.
     ResourceRef GetObjectAnimationAttr() const;
+    virtual void ApplyAttributes() override;
 
 protected:
     /// Handle attribute animation added.
@@ -134,7 +136,7 @@ protected:
     /// Find target of an attribute animation from object hierarchy by name.
     virtual Animatable* FindAttributeAnimationTarget(const String& name, String& outName);
     /// Set object attribute animation internal.
-    void SetObjectAttributeAnimation(const String& name, ValueAnimation* attributeAnimation, WrapMode wrapMode, float speed);
+    void SetObjectAttributeAnimation(const String& name, ValueAnimation* attributeAnimation, WrapMode wrapMode, float speed, float time);
     /// Handle object animation added.
     void OnObjectAnimationAdded(ObjectAnimation* objectAnimation);
     /// Handle object animation removed.

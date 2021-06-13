@@ -85,20 +85,51 @@ bool Animatable::LoadXML(const XMLElement& source)
     XMLElement elem = source.GetChild("objectanimation");
     if (elem)
     {
-        SharedPtr<ObjectAnimation> objectAnimation(new ObjectAnimation(context_));
-        if (!objectAnimation->LoadXML(elem))
-            return false;
-
-        SetObjectAnimation(objectAnimation);
+        SharedPtr<ObjectAnimation> objectAnimation;
+        ResourceRef rref = elem.GetResourceRef();
+        if (rref.type_ == ObjectAnimation::GetTypeStatic())
+        {
+            ResourceCache* cache = GetSubsystem<ResourceCache>();
+            objectAnimation = cache->GetResource<ObjectAnimation>(rref.name_);
+        }
+        else
+        {
+            objectAnimation = new ObjectAnimation(context_);
+            if (!objectAnimation->LoadXML(elem))
+                return false;
+        }
+        if (objectAnimation)
+        {
+            XMLElement animTimes = elem.GetChild("animationtime");
+            while (animTimes)
+            {
+                String name = animTimes.GetAttribute("name");
+                ValueAnimationInfo* animInfo = objectAnimation->GetAttributeAnimationInfo(name);
+                if (animInfo)
+                    animInfo->SetTime(animTimes.GetFloat("time"));
+                animTimes = animTimes.GetNext("animationtime");
+            }
+        }
+        SetObjectAnimationOnLoad(objectAnimation);
     }
 
     elem = source.GetChild("attributeanimation");
     while (elem)
     {
         String name = elem.GetAttribute("name");
-        SharedPtr<ValueAnimation> attributeAnimation(new ValueAnimation(context_));
-        if (!attributeAnimation->LoadXML(elem))
-            return false;
+        SharedPtr<ValueAnimation> attributeAnimation;
+        ResourceRef rr = elem.GetResourceRef();
+        if (rr.type_ == ValueAnimation::GetTypeStatic())
+        {
+            ResourceCache* cache = GetSubsystem<ResourceCache>();
+            attributeAnimation = cache->GetResource<ValueAnimation>(rr.name_);
+        }
+        else
+        {
+            attributeAnimation = new ValueAnimation(context_);
+            if (!attributeAnimation->LoadXML(elem))
+                return false;
+        }
 
         String wrapModeString = source.GetAttribute("wrapmode");
         WrapMode wrapMode = WM_LOOP;
@@ -113,7 +144,7 @@ bool Animatable::LoadXML(const XMLElement& source)
 
         float speed = elem.GetFloat("speed");
         SetAttributeAnimation(name, attributeAnimation, wrapMode, speed);
-
+        SetAttributeAnimationTime(name, elem.GetFloat("time"));
         elem = elem.GetNext("attributeanimation");
     }
 
@@ -131,11 +162,43 @@ bool Animatable::LoadJSON(const JSONValue& source)
     JSONValue value = source.Get("objectanimation");
     if (!value.IsNull())
     {
-        SharedPtr<ObjectAnimation> objectAnimation(new ObjectAnimation(context_));
-        if (!objectAnimation->LoadJSON(value))
-            return false;
-
-        SetObjectAnimation(objectAnimation);
+        SharedPtr<ObjectAnimation> objectAnimation;
+        if (value.Contains("resource"))
+        {
+            Variant var = value["resource"].GetVariantValue(VAR_RESOURCEREF);
+            ResourceRef rref = var.GetResourceRef();
+            if (rref.type_ == ObjectAnimation::GetTypeStatic())
+            {
+                ResourceCache* cache = GetSubsystem<ResourceCache>();
+                objectAnimation = cache->GetResource<ObjectAnimation>(rref.name_);
+            }
+        }
+        else
+        {
+            objectAnimation = new ObjectAnimation(context_);
+            if (!objectAnimation->LoadJSON(value))
+                return false;
+        }
+        if (objectAnimation)
+        {
+            JSONValue animTimes = value["animationtime"];
+            if (animTimes.GetValueType() == JSON_ARRAY)
+            {
+                const JSONArray& arr = animTimes.GetArray();
+                for (unsigned i = 0, c = arr.Size(); i < c; i++)
+                {
+                    JSONValue atime = arr[i];
+                    String name = atime["name"].GetString();
+                    if (!name.Empty())
+                    {
+                        ValueAnimationInfo* animInfo = objectAnimation->GetAttributeAnimationInfo(name);
+                        if (animInfo)
+                            animInfo->SetTime(atime["time"].GetFloat());
+                    }
+                }
+            }
+        }
+        SetObjectAnimationOnLoad(objectAnimation);
     }
 
     JSONValue attributeAnimationValue = source.Get("attributeanimation");
@@ -171,6 +234,7 @@ bool Animatable::LoadJSON(const JSONValue& source)
 
         float speed = value.Get("speed").GetFloat();
         SetAttributeAnimation(name, attributeAnimation, wrapMode, speed);
+        SetAttributeAnimationTime(name, value["time"].GetFloat());
     }
 
     return true;
@@ -182,13 +246,30 @@ bool Animatable::SaveXML(XMLElement& dest) const
         return false;
 
     // Object animation without name
-    if (objectAnimation_ && objectAnimation_->GetName().Empty())
+    if (objectAnimation_)
     {
         XMLElement elem = dest.CreateChild("objectanimation");
-        if (!objectAnimation_->SaveXML(elem))
-            return false;
+        String name = objectAnimation_->GetName();
+        if (name.Empty())
+        {
+            if (!objectAnimation_->SaveXML(elem))
+                return false;
+        }
+        else
+            elem.SetResourceRef(ResourceRef(ObjectAnimation::GetTypeStatic(), name));
+        const HashMap<String, SharedPtr<ValueAnimationInfo> >& infos = objectAnimation_->GetAttributeAnimationInfos();
+        for (HashMap<String, SharedPtr<ValueAnimationInfo> >::ConstIterator i = infos.Begin(); i != infos.End(); ++i)
+        {
+            String outName;
+            Animatable* a = const_cast<Animatable*>(this)->FindAttributeAnimationTarget(i->first_, outName);
+            if (a != nullptr && !outName.Empty())
+            {
+                XMLElement timesElem = elem.CreateChild("animationtime");
+                timesElem.SetAttribute("name", i->first_);
+                timesElem.SetFloat("time", a->GetAttributeAnimationTime(outName));
+            }
+        }
     }
-
 
     for (HashMap<String, SharedPtr<AttributeAnimationInfo> >::ConstIterator i = attributeAnimationInfos_.Begin();
          i != attributeAnimationInfos_.End(); ++i)
@@ -200,11 +281,18 @@ bool Animatable::SaveXML(XMLElement& dest) const
         const AttributeInfo& attr = i->second_->GetAttributeInfo();
         XMLElement elem = dest.CreateChild("attributeanimation");
         elem.SetAttribute("name", attr.name_);
-        if (!attributeAnimation->SaveXML(elem))
-            return false;
+        String name = attributeAnimation->GetName();
+        if (name.Empty())
+        {
+            if (!attributeAnimation->SaveXML(elem))
+                return false;
+        }
+        else
+            elem.SetResourceRef(ResourceRef(ValueAnimation::GetTypeStatic(), name));
 
         elem.SetAttribute("wrapmode", wrapModeNames[i->second_->GetWrapMode()]);
         elem.SetFloat("speed", i->second_->GetSpeed());
+        elem.SetFloat("time", i->second_->GetTime());
     }
 
     return true;
@@ -216,11 +304,36 @@ bool Animatable::SaveJSON(JSONValue& dest) const
         return false;
 
     // Object animation without name
-    if (objectAnimation_ && objectAnimation_->GetName().Empty())
+    if (objectAnimation_)
     {
         JSONValue objectAnimationValue;
-        if (!objectAnimation_->SaveJSON(objectAnimationValue))
-            return false;
+        String name = objectAnimation_->GetName();
+        if (name.Empty())
+        {
+            if (!objectAnimation_->SaveJSON(objectAnimationValue))
+                return false;
+        }
+        else
+        {
+            JSONValue rr;
+            rr.SetVariantValue(ResourceRef(ObjectAnimation::GetTypeStatic(), name));
+            objectAnimationValue.Set("resource", rr);
+        }
+        JSONValue animTimes;
+        const HashMap<String, SharedPtr<ValueAnimationInfo> >& infos = objectAnimation_->GetAttributeAnimationInfos();
+        for (HashMap<String, SharedPtr<ValueAnimationInfo> >::ConstIterator i = infos.Begin(); i != infos.End(); ++i)
+        {
+            String outName;
+            Animatable* a = const_cast<Animatable*>(this)->FindAttributeAnimationTarget(i->first_, outName);
+            if (a != nullptr && !outName.Empty())
+            {
+                JSONValue aInfo;
+                aInfo["name"] = i->first_;
+                aInfo["time"] = a->GetAttributeAnimationTime(outName);
+                animTimes.Push(aInfo);
+            }
+        }
+        objectAnimationValue["animationtime"] = animTimes;
         dest.Set("objectanimation", objectAnimationValue);
     }
 
@@ -241,6 +354,7 @@ bool Animatable::SaveJSON(JSONValue& dest) const
 
         attributeValue.Set("wrapmode", wrapModeNames[i->second_->GetWrapMode()]);
         attributeValue.Set("speed", (float) i->second_->GetSpeed());
+        attributeValue.Set("time", (float)i->second_->GetTime());
 
         attributeAnimationValue.Set(attr.name_, attributeValue);
     }
@@ -315,6 +429,21 @@ void Animatable::SetObjectAnimation(ObjectAnimation* objectAnimation)
         SubscribeToEvent(objectAnimation_, E_ATTRIBUTEANIMATIONADDED, URHO3D_HANDLER(Animatable, HandleAttributeAnimationAdded));
         SubscribeToEvent(objectAnimation_, E_ATTRIBUTEANIMATIONREMOVED, URHO3D_HANDLER(Animatable, HandleAttributeAnimationRemoved));
     }
+}
+
+void Animatable::SetObjectAnimationOnLoad(ObjectAnimation* objectAnimation)
+{
+    if (objectAnimation == objectAnimation_)
+        return;
+
+    if (objectAnimation_)
+    {
+        OnObjectAnimationRemoved(objectAnimation_);
+        UnsubscribeFromEvent(objectAnimation_, E_ATTRIBUTEANIMATIONADDED);
+        UnsubscribeFromEvent(objectAnimation_, E_ATTRIBUTEANIMATIONREMOVED);
+    }
+
+    objectAnimation_ = objectAnimation;
 }
 
 void Animatable::SetAttributeAnimation(const String& name, ValueAnimation* attributeAnimation, WrapMode wrapMode, float speed)
@@ -446,7 +575,7 @@ float Animatable::GetAttributeAnimationSpeed(const String& name) const
 float Animatable::GetAttributeAnimationTime(const String& name) const
 {
     const AttributeAnimationInfo* info = GetAttributeAnimationInfo(name);
-    return info ? info->GetTime() : 0.0f;
+    return info ? info->GetTime() : -1.0f;
 }
 
 void Animatable::SetObjectAnimationAttr(const ResourceRef& value)
@@ -470,12 +599,17 @@ Animatable* Animatable::FindAttributeAnimationTarget(const String& name, String&
     return this;
 }
 
-void Animatable::SetObjectAttributeAnimation(const String& name, ValueAnimation* attributeAnimation, WrapMode wrapMode, float speed)
+void Animatable::SetObjectAttributeAnimation(const String& name, ValueAnimation* attributeAnimation, WrapMode wrapMode, float speed, float time)
 {
+    if (time < 0.0f) // finished animation
+        return;
     String outName;
     Animatable* target = FindAttributeAnimationTarget(name, outName);
     if (target)
+    {
         target->SetAttributeAnimation(outName, attributeAnimation, wrapMode, speed);
+        target->SetAttributeAnimationTime(outName, time);
+    }
 }
 
 void Animatable::OnObjectAnimationAdded(ObjectAnimation* objectAnimation)
@@ -490,7 +624,7 @@ void Animatable::OnObjectAnimationAdded(ObjectAnimation* objectAnimation)
     {
         const String& name = i->first_;
         ValueAnimationInfo* info = i->second_;
-        SetObjectAttributeAnimation(name, info->GetAnimation(), info->GetWrapMode(), info->GetSpeed());
+        SetObjectAttributeAnimation(name, info->GetAnimation(), info->GetWrapMode(), info->GetSpeed(), info->GetTime());
     }
 }
 
@@ -502,7 +636,7 @@ void Animatable::OnObjectAnimationRemoved(ObjectAnimation* objectAnimation)
     // Just remove all attribute animations listed by the object animation
     const HashMap<String, SharedPtr<ValueAnimationInfo> >& infos = objectAnimation->GetAttributeAnimationInfos();
     for (HashMap<String, SharedPtr<ValueAnimationInfo> >::ConstIterator i = infos.Begin(); i != infos.End(); ++i)
-        SetObjectAttributeAnimation(i->first_, nullptr, WM_LOOP, 1.0f);
+        SetObjectAttributeAnimation(i->first_, nullptr, WM_LOOP, 1.0f, 0);
 }
 
 void Animatable::UpdateAttributeAnimations(float timeStep)
@@ -556,7 +690,7 @@ void Animatable::HandleAttributeAnimationAdded(StringHash eventType, VariantMap&
     if (!info)
         return;
 
-    SetObjectAttributeAnimation(name, info->GetAnimation(), info->GetWrapMode(), info->GetSpeed());
+    SetObjectAttributeAnimation(name, info->GetAnimation(), info->GetWrapMode(), info->GetSpeed(), info->GetTime());
 }
 
 void Animatable::HandleAttributeAnimationRemoved(StringHash eventType, VariantMap& eventData)
@@ -567,7 +701,18 @@ void Animatable::HandleAttributeAnimationRemoved(StringHash eventType, VariantMa
     using namespace AttributeAnimationRemoved;
     const String& name = eventData[P_ATTRIBUTEANIMATIONNAME].GetString();
 
-    SetObjectAttributeAnimation(name, nullptr, WM_LOOP, 1.0f);
+    SetObjectAttributeAnimation(name, nullptr, WM_LOOP, 1.0f, .0f);
+}
+
+void Animatable::ApplyAttributes()
+{
+    Serializable::ApplyAttributes();
+    if (objectAnimation_)
+    {
+        OnObjectAnimationAdded(objectAnimation_);
+        SubscribeToEvent(objectAnimation_, E_ATTRIBUTEANIMATIONADDED, URHO3D_HANDLER(Animatable, HandleAttributeAnimationAdded));
+        SubscribeToEvent(objectAnimation_, E_ATTRIBUTEANIMATIONREMOVED, URHO3D_HANDLER(Animatable, HandleAttributeAnimationRemoved));
+    }
 }
 
 }
