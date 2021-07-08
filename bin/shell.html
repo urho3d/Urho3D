@@ -80,7 +80,7 @@
     </div>
     <script>
         var canvasElement = document.getElementById('canvas');
-        var devicePixelRatio = window.devicePixelRatio || 1;
+        var devicePixelRatio = 1;//window.devicePixelRatio || 1;
         var canvasWidth = 0;
         var canvasHeight = 0;
 
@@ -94,6 +94,7 @@
         // Detect fullscreen change and resize canvas resolution accordingly
         function viewportResizeHandler() {
             if (document.hidden) {
+                unlockPointer();
                 return;
             }
 
@@ -107,22 +108,31 @@
             }
         }
 
+        function unlockPointer() {
+            document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+            document.exitPointerLock();
+        }
+
+        function lockPointer() {
+            if (Module.shouldLockPointer && !IsPointerLocked()) {
+                canvasElement.requestPointerLock = canvasElement.requestPointerLock || canvasElement.mozRequestPointerLock;
+                canvasElement.requestPointerLock();
+            }
+        }
+
+        canvasElement.addEventListener('click', lockPointer);
+
         function visibilityChanged() {
             if (document.hidden) {
+                unlockPointer();
                 return;
             }
-
-            // Overwrite some emscripten functions that break the input
-            __registerFocusEventCallback = function() {
-                if (!JSEvents.focusEvent) JSEvents.focusEvent = _malloc(256);
-            };
-            __registerFullscreenChangeEventCallback = function() {
-                if (!JSEvents.fullscreenChangeEvent) JSEvents.fullscreenChangeEvent = _malloc(280);
-            };
 
             setTimeout(() => {
                 viewportResizeHandler();
             }, 100);
+
+            lockPointer();
         }
 
         document.addEventListener('fullscreenchange', viewportResizeHandler, false);
@@ -166,26 +176,34 @@
             return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
         }
 
+        function IsPointerLocked() {
+            if(document.pointerLockElement === canvasElement || document.mozPointerLockElement === canvasElement) {
+                return true;
+            }
+            return false;
+        }
+        function pointerLockChange() {
+            Module.JSPointerLockChange(IsPointerLocked());
+        }
+        document.addEventListener('pointerlockchange', pointerLockChange);
+        document.addEventListener('mozpointerlockchange', pointerLockChange);
+        document.addEventListener('webkitpointerlockchange', pointerLockChange);
+
+
         // App is ready to launch, make canvas and fullscreen button visible
         function ready() {
             document.getElementById('canvas').style.display = 'block';
             document.getElementById('fullscreen-button').style.display = 'block';
 
             if (document.hidden) {
+                unlockPointer();
                 return;
             }
-
-            // Overwrite some emscripten functions that break the input
-            __registerFocusEventCallback = function() {
-                if (!JSEvents.focusEvent) JSEvents.focusEvent = _malloc(256);
-            };
-            __registerFullscreenChangeEventCallback = function() {
-                if (!JSEvents.fullscreenChangeEvent) JSEvents.fullscreenChangeEvent = _malloc(280);
-            };
 
             setTimeout(() => {
                 viewportResizeHandler();
             }, 100);
+            lockPointer();
         }
 
         var Module = {
@@ -193,6 +211,10 @@
             postRun: [],
             canvas: canvasElement,
             forcedAspectRatio: false,
+            // Disable custom emscripten pointer lock handling
+            elementPointerLock: false,
+            mouseVisible: true,
+            shouldLockPointer: false,
 
             print: function (text) {
                 console.log(text);
@@ -252,6 +274,16 @@
                 this.totalDependencies = Math.max(this.totalDependencies, left);
                 Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
             },
+
+            RequestPointerLock: function() {
+                Module.shouldLockPointer = true;
+                lockPointer();
+            },
+
+            ExitPointerLock: function() {
+                Module.shouldLockPointer = false;
+                unlockPointer();
+            }
         };
         Module.setStatus('Downloading...');
     </script>

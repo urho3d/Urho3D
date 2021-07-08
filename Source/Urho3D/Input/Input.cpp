@@ -47,6 +47,8 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
+#include <emscripten/emscripten.h>
+#include <emscripten/bind.h>
 #endif
 
 #include "../DebugNew.h"
@@ -109,6 +111,8 @@ public:
 
     /// Static callback method for Pointer Lock API. Handles change in Pointer Lock state and sends events for mouse mode change.
     static EM_BOOL HandlePointerLockChange(int eventType, const EmscriptenPointerlockChangeEvent* keyEvent, void* userData);
+    /// Static callback method for Pointer Lock API for the custom shell implementation
+    static void HandleCustomPointerLockChange(bool pointerLocked);
     /// Static callback method for tracking focus change events.
     static EM_BOOL HandleFocusChange(int eventType, const EmscriptenFocusEvent* keyEvent, void* userData);
     /// Static callback method for suppressing mouse jump.
@@ -126,7 +130,7 @@ public:
 
 private:
     /// Instance of Input subsystem that constructed this instance.
-    Input* inputInst_;
+    static Input* inputInst_;
     /// The mouse mode being requested for pointer-lock.
     static MouseMode requestedMouseMode_;
     /// Flag indicating whether to suppress the next mouse mode change event.
@@ -138,18 +142,21 @@ private:
     static bool invalidatedSuppressMouseModeEvent_;
 };
 
+Input* EmscriptenInput::inputInst_ = nullptr;
 bool EmscriptenInput::suppressMouseModeEvent_ = false;
 MouseMode EmscriptenInput::requestedMouseMode_ = MM_INVALID;
 bool EmscriptenInput::invalidatedSuppressMouseModeEvent_ = false;
 MouseMode EmscriptenInput::invalidatedRequestedMouseMode_ = MM_INVALID;
 
-EmscriptenInput::EmscriptenInput(Input* inputInst) :
-    inputInst_(inputInst)
+EmscriptenInput::EmscriptenInput(Input* inputInst)
 {
+    inputInst_ = inputInst;
     auto* vInputInst = (void*)inputInst;
 
+#ifndef URHO3D_CUSTOM_SHELL
     // Handle pointer lock
     emscripten_set_pointerlockchange_callback(NULL, vInputInst, false, EmscriptenInput::HandlePointerLockChange);
+#endif
 
     // Handle mouse events to prevent mouse jumps
     emscripten_set_mousedown_callback(NULL, vInputInst, true, EmscriptenInput::HandleMouseJump);
@@ -167,7 +174,13 @@ void EmscriptenInput::RequestPointerLock(MouseMode mode, bool suppressEvent)
 {
     requestedMouseMode_ = mode;
     suppressMouseModeEvent_ = suppressEvent;
+#ifdef URHO3D_CUSTOM_SHELL
+    EM_ASM({
+        Module.RequestPointerLock();
+    });
+#else
     emscripten_request_pointerlock(NULL, true);
+#endif
 }
 
 void EmscriptenInput::ExitPointerLock(bool suppressEvent)
@@ -183,8 +196,16 @@ void EmscriptenInput::ExitPointerLock(bool suppressEvent)
     if (inputInst_->IsMouseLocked())
     {
         inputInst_->emscriptenExitingPointerLock_ = true;
+#ifndef URHO3D_CUSTOM_SHELL
         emscripten_exit_pointerlock();
+#endif
     }
+
+#ifdef URHO3D_CUSTOM_SHELL
+    EM_ASM({
+        Module.ExitPointerLock();
+    });
+#endif
 }
 
 bool EmscriptenInput::IsVisible()
@@ -196,6 +217,51 @@ bool EmscriptenInput::IsVisible()
     // Assume visible
     URHO3D_LOGWARNING("Could not determine visibility status.");
     return true;
+}
+
+void EmscriptenInput::HandleCustomPointerLockChange(bool pointerLocked)
+{
+    bool invalid = false;
+    const bool suppress = suppressMouseModeEvent_;
+    if (requestedMouseMode_ == MM_INVALID && invalidatedRequestedMouseMode_ != MM_INVALID)
+    {
+        invalid = true;
+        requestedMouseMode_ = invalidatedRequestedMouseMode_;
+        suppressMouseModeEvent_ = invalidatedSuppressMouseModeEvent_;
+        invalidatedRequestedMouseMode_ = MM_INVALID;
+        invalidatedSuppressMouseModeEvent_ = false;
+    }
+
+    if (pointerLocked)
+    {
+        // Pointer Lock is now active
+        inputInst_->emscriptenPointerLock_ = true;
+        inputInst_->emscriptenEnteredPointerLock_ = true;
+        inputInst_->SetMouseModeEmscriptenFinal(requestedMouseMode_, suppressMouseModeEvent_);
+    }
+    else
+    {
+        // Pointer Lock is now inactive
+        inputInst_->emscriptenPointerLock_ = false;
+
+        if (inputInst_->mouseMode_ == MM_RELATIVE)
+            inputInst_->SetMouseModeEmscriptenFinal(MM_FREE, suppressMouseModeEvent_);
+        else if (inputInst_->mouseMode_ == MM_ABSOLUTE)
+            inputInst_->SetMouseModeEmscriptenFinal(MM_ABSOLUTE, suppressMouseModeEvent_);
+
+        inputInst_->emscriptenExitingPointerLock_ = false;
+    }
+
+    requestedMouseMode_ = MM_INVALID;
+    suppressMouseModeEvent_ = false;
+
+    invalidatedRequestedMouseMode_ = MM_INVALID;
+    invalidatedSuppressMouseModeEvent_ = false;
+}
+
+using namespace emscripten;
+EMSCRIPTEN_BINDINGS(Module) {
+    function("JSPointerLockChange", &EmscriptenInput::HandleCustomPointerLockChange);
 }
 
 EM_BOOL EmscriptenInput::HandlePointerLockChange(int eventType, const EmscriptenPointerlockChangeEvent* keyEvent, void* userData)
@@ -594,7 +660,7 @@ void Input::SetMouseVisible(bool enable, bool suppressEvent)
                 if (mouseMode_ == MM_ABSOLUTE)
                     SetMouseModeAbsolute(SDL_TRUE);
 #else
-                if (mouseMode_ == MM_ABSOLUTE && !emscriptenPointerLock_)
+                if (mouseMode_ == MM_ABSOLUTE && !emscriptenPointerLock_ || !enable)
                     emscriptenInput_->RequestPointerLock(MM_ABSOLUTE, suppressEvent);
 #endif
                 SDL_ShowCursor(SDL_FALSE);
@@ -633,7 +699,7 @@ void Input::SetMouseVisible(bool enable, bool suppressEvent)
                     }
                 }
 #else
-                if (mouseMode_ == MM_ABSOLUTE && emscriptenPointerLock_)
+                if (mouseMode_ == MM_ABSOLUTE && emscriptenPointerLock_ || enable)
                     emscriptenInput_->ExitPointerLock(suppressEvent);
 #endif
             }
@@ -777,6 +843,7 @@ void Input::SetMouseModeEmscripten(MouseMode mode, bool suppressEvent)
             if (emscriptenPointerLock_)
             {
                 SetMouseVisibleEmscripten(false, suppressEvent);
+
             }
             else
             {

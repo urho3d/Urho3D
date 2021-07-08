@@ -130,6 +130,10 @@ if (URHO3D_SSL)
     endif ()
 endif ()
 
+if (EXISTS ${CMAKE_SOURCE_DIR}/bin/shell.html)
+    add_definitions (-DURHO3D_CUSTOM_SHELL)
+endif()
+
 # Define source files
 foreach (DIR IK Navigation Network Physics Urho2D WebP)
     string (TOUPPER URHO3D_${DIR} OPT)
