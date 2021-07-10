@@ -513,7 +513,11 @@ bool XMLElement::SetVariantMap(const VariantMap& value)
         XMLElement variantElem = CreateChild("variant");
         if (!variantElem)
             return false;
-        variantElem.SetUInt("hash", i->first_.Value());
+
+        if (i->first_.GetGlobalStringHashRegister() && !i->first_.Reverse().Empty())
+            variantElem.SetAttribute("name", i->first_.Reverse());
+        else
+            variantElem.SetUInt("hash", i->first_.Value());
         variantElem.SetVariant(i->second_);
     }
 

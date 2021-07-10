@@ -112,7 +112,11 @@ bool ValueAnimation::LoadXML(const XMLElement& source)
     while (eventFrameElem)
     {
         float time = eventFrameElem.GetFloat("time");
-        unsigned eventType = eventFrameElem.GetUInt("eventtype");
+        unsigned eventType = 0;
+        if (eventFrameElem.HasAttribute("eventname"))
+            eventType = StringHash(eventFrameElem.GetAttributeCString("eventname")).Value();
+        else
+            eventType = eventFrameElem.GetUInt("eventtype");
         VariantMap eventData = eventFrameElem.GetChild("eventdata").GetVariantMap();
 
         SetEventFrame(time, StringHash(eventType), eventData);
@@ -141,7 +145,10 @@ bool ValueAnimation::SaveXML(XMLElement& dest) const
         const VAnimEventFrame& eventFrame = eventFrames_[i];
         XMLElement eventFrameElem = dest.CreateChild("eventframe");
         eventFrameElem.SetFloat("time", eventFrame.time_);
-        eventFrameElem.SetUInt("eventtype", eventFrame.eventType_.Value());
+        if (StringHash::GetGlobalStringHashRegister() && !eventFrame.eventType_.Reverse().Empty())
+            eventFrameElem.SetAttribute("eventname",eventFrame.eventType_.Reverse());
+        else
+            eventFrameElem.SetUInt("eventtype", eventFrame.eventType_.Value());
         eventFrameElem.CreateChild("eventdata").SetVariantMap(eventFrame.eventData_);
     }
 
@@ -176,7 +183,11 @@ bool ValueAnimation::LoadJSON(const JSONValue& source)
     {
         const JSONValue& eventFrameVal = eventFramesArray[i];
         float time = eventFrameVal.Get("time").GetFloat();
-        unsigned eventType = eventFrameVal.Get("eventtype").GetUInt();
+        unsigned eventType = 0;
+        if (eventFrameVal.Contains("eventname"))
+            eventType = StringHash(eventFrameVal.GetCString()).Value();
+        else
+            eventType = eventFrameVal.Get("eventtype").GetUInt();
         VariantMap eventData = eventFrameVal.Get("eventdata").GetVariantMap();
         SetEventFrame(time, StringHash(eventType), eventData);
     }
@@ -198,7 +209,7 @@ bool ValueAnimation::SaveJSON(JSONValue& dest) const
         JSONValue keyFrameVal;
         keyFrameVal.Set("time", keyFrame.time_);
         JSONValue valueVal;
-        valueVal.SetVariant(keyFrame.value_);
+        valueVal.SetVariant(keyFrame.value_,GetContext());
         keyFrameVal.Set("value", valueVal);
         keyFramesArray.Push(keyFrameVal);
     }
@@ -211,9 +222,12 @@ bool ValueAnimation::SaveJSON(JSONValue& dest) const
         const VAnimEventFrame& eventFrame = eventFrames_[i];
         JSONValue eventFrameVal;
         eventFrameVal.Set("time", eventFrame.time_);
-        eventFrameVal.Set("eventtype", eventFrame.eventType_.Value());
+        if (StringHash::GetGlobalStringHashRegister() && !eventFrame.eventType_.Reverse().Empty())
+            eventFrameVal.Set("eventname",eventFrame.eventType_.Reverse());
+        else
+            eventFrameVal.Set("eventtype", eventFrame.eventType_.Value());
         JSONValue eventDataVal;
-        eventDataVal.SetVariantMap(eventFrame.eventData_);
+        eventDataVal.SetVariantMap(eventFrame.eventData_,GetContext());
         eventFrameVal.Set("eventdata", eventDataVal);
 
         eventFramesArray.Push(eventFrameVal);

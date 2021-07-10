@@ -52,6 +52,9 @@ static const char* numberTypeNames[] =
     nullptr
 };
 
+// The marker that indicates that we have a string for the VariantMap key as opposed to a hexadecimal number. Could be anything other than an allowed base-16 digit.
+static const char variantMapStringKeyMarker = '$';
+
 const JSONValue JSONValue::EMPTY;
 const JSONArray JSONValue::emptyArray { };
 const JSONObject JSONValue::emptyObject;
@@ -567,7 +570,10 @@ void JSONValue::SetVariantMap(const VariantMap& variantMap, Context* context)
 {
     SetType(JSON_OBJECT);
     for (VariantMap::ConstIterator i = variantMap.Begin(); i != variantMap.End(); ++i)
-        (*this)[i->first_.ToString()].SetVariant(i->second_);
+        if (i->first_.GetGlobalStringHashRegister() && !i->first_.Reverse().Empty())
+            (*this)[String(variantMapStringKeyMarker) + i->first_.Reverse()].SetVariant(i->second_, context);
+        else
+            (*this)[i->first_.ToString()].SetVariant(i->second_, context);
 }
 
 VariantMap JSONValue::GetVariantMap() const
@@ -581,8 +587,12 @@ VariantMap JSONValue::GetVariantMap() const
 
     for (ConstJSONObjectIterator i = Begin(); i != End(); ++i)
     {
-        /// \todo Ideally this should allow any strings, but for now the convention is that the keys need to be hexadecimal StringHashes
-        StringHash key(ToUInt(i->first_, 16));
+        // Keys are allowed to be hexadecimal string hash values or arbitrary strings prefixed with $
+        StringHash key;
+        if (!i->first_.Empty() && i->first_[0] == variantMapStringKeyMarker)
+            key = StringHash(i->first_.Substring(1));
+        else
+            key = StringHash(ToUInt(i->first_, 16));
         Variant variant = i->second_.GetVariant();
         variantMap[key] = variant;
     }
